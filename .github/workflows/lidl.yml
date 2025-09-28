@@ -25,5 +25,5 @@ jobs:
       - name: Run Selenium script
         run: python lidl.py
         env:
-          LIDL_USERNAME: ${{ "015251531065" }}
-          LIDL_PASSWORD: ${{ "Jee@20182022" }}
+          LIDL_USERNAME: ${{ secrets.LIDL_USERNAME }}
+          LIDL_PASSWORD: ${{ secrets.LIDL_PASSWORD }}
