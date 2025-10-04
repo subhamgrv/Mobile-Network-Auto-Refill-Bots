@@ -2,7 +2,7 @@ name: Lidl Bot
 
 on:
   schedule:
-    # - cron: "*/13 * * * *"   # run every 5 minutes
+     - cron: "*/13 * * * *"   # run every 5 minutes
   workflow_dispatch:         # allow manual run
 
 jobs:
