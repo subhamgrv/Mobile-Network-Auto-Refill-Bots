@@ -137,7 +137,7 @@ def main() -> int:
         print(f"Remaining GB: {remaining}")
 
         # 3️⃣ Click refill if ≤ 0.2 GB left
-        if remaining is not None and remaining <= 0.5:
+        if remaining is not None and remaining <= 0.9:
             try:
                 refill_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "tariff-btn-177")))
                 try:
@@ -172,4 +172,5 @@ def _save_artifacts(driver):
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
