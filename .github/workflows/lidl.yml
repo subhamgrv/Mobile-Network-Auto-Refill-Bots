@@ -2,8 +2,8 @@ name: Lidl Bot
 
 on:
   schedule:
-     - cron: "*/12 * * * *"   # run every 5 minutes
-  workflow_dispatch:         # allow manual run
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
 
 jobs:
   run-lidl:
@@ -11,6 +11,41 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
+
+      - name: Install system deps and Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip gnupg ca-certificates fonts-liberation libappindicator3-1 libasound2
+          # Add Google repo and install google-chrome-stable
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
+
+          # Determine chrome binary path
+          CHROME_BIN=$(which google-chrome-stable || which chromium-browser || which chromium || true)
+          echo "Detected chrome binary: $CHROME_BIN"
+          echo "CHROME_BINARY=$CHROME_BIN" >> $GITHUB_ENV
+
+          # Get Chrome full version and major version
+          CHROME_FULL_VERSION=$($CHROME_BIN --version | grep -oP '\d+\.\d+\.\d+\.\d+' || true)
+          echo "Chrome full version: $CHROME_FULL_VERSION"
+          CHROME_MAJOR=$(echo "$CHROME_FULL_VERSION" | cut -d. -f1)
+          echo "Chrome major version: $CHROME_MAJOR"
+
+          # Download matching chromedriver for major version
+          if [ -n "$CHROME_MAJOR" ]; then
+            DRIVER_VER=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_MAJOR")
+            echo "Resolved chromedriver version: $DRIVER_VER"
+            curl -sS -O "https://chromedriver.storage.googleapis.com/${DRIVER_VER}/chromedriver_linux64.zip"
+            unzip -q chromedriver_linux64.zip
+            sudo mv chromedriver /usr/local/bin/chromedriver
+            sudo chmod +x /usr/local/bin/chromedriver
+            echo "/usr/local/bin/chromedriver" | sudo tee /etc/paths.d/chromedriver || true
+            echo "CHROMEDRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
+          else
+            echo "Failed to detect Chrome major version; chromedriver not installed."
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -22,8 +57,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Debug: chrome & chromedriver versions
+        run: |
+          echo "CHROME_BINARY from env: $CHROME_BINARY"
+          $CHROME_BINARY --version || true
+          which chromedriver || true
+          chromedriver --version || true
+          python -V
+
       - name: Run Selenium script
-        run: python lidl.py
         env:
           LIDL_USERNAME: ${{ secrets.LIDL_USERNAME }}
           LIDL_PASSWORD: ${{ secrets.LIDL_PASSWORD }}
+          HEADLESS: "true"
+          CHROME_BINARY: ${{ env.CHROME_BINARY }}
+          CHROMEDRIVER_PATH: ${{ env.CHROMEDRIVER_PATH }}
+        run: python lidl.py
