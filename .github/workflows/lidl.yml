@@ -53,7 +53,6 @@ jobs:
 
 
 
-
       - name: Run Selenium script
         env:
           LIDL_USERNAME: ${{ secrets.LIDL_USERNAME }}
@@ -62,3 +61,10 @@ jobs:
         run: |
           set -x
           python lidl.py
+          
+      - name: Upload debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lidl-debug
+          path: /tmp/lidl/
