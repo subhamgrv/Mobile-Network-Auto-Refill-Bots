@@ -17,7 +17,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -y
           sudo apt-get install -y wget unzip curl gnupg ca-certificates fonts-liberation \
-            libappindicator3-1 libnss3 libxss1 libgconf-2-4
+            libappindicator3-1 libnss3 libxss1
 
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add - >/dev/null
           echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
