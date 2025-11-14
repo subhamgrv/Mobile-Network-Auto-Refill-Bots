@@ -27,7 +27,7 @@ WAIT_SECS = int(os.getenv("WAIT_SECS", "40"))
 
 
 # ===========================================================
-#  Chrome Setup for GitHub Actions
+#  Chrome Setup
 # ===========================================================
 def make_driver() -> webdriver.Chrome:
     opts = Options()
@@ -56,7 +56,7 @@ def make_driver() -> webdriver.Chrome:
 
 
 # ===========================================================
-# Helpers
+# Utility functions
 # ===========================================================
 def click_if_present(driver, by, value):
     try:
@@ -120,11 +120,10 @@ def main() -> int:
     wait = WebDriverWait(driver, WAIT_SECS)
 
     try:
-        # Load login page
         driver.get(LOGIN_URL)
         accept_cookies_if_any(driver)
 
-        # NEW login fields (confirmed from your HTML)
+        # Login fields
         username_field = wait.until(
             EC.presence_of_element_located((By.NAME, "msisdn"))
         )
@@ -138,13 +137,12 @@ def main() -> int:
         password_field.clear()
         password_field.send_keys(PASSWORD)
 
-        # New login button
         login_button = wait.until(
             EC.element_to_be_clickable((By.ID, "submit-10"))
         )
         login_button.click()
 
-        # Wait until dashboard loads
+        # Wait for dashboard
         wait.until(
             EC.any_of(
                 EC.url_contains("uebersicht"),
@@ -152,7 +150,6 @@ def main() -> int:
             )
         )
 
-        # Parse data usage blocks
         blocks = get_consumption_blocks(driver, wait)
 
         # Extract remaining GB
@@ -171,7 +168,7 @@ def main() -> int:
         print(f"Remaining GB: {remaining}")
 
         # =====================================================
-        # NEW REFILL BUTTON (confirmed from your screenshot)
+        # Refill Activation (Matches your HTML exactly)
         # =====================================================
         if remaining is not None and remaining <= 0.9:
             try:
@@ -181,9 +178,18 @@ def main() -> int:
                     )
                 )
 
+                # Scroll
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});",
+                    refill_button,
+                )
+                time.sleep(0.3)
+
+                # Try normal click
                 try:
                     refill_button.click()
                 except:
+                    # Fallback click
                     driver.execute_script("arguments[0].click();", refill_button)
 
                 print("Refill activated successfully!")
@@ -205,7 +211,7 @@ def main() -> int:
 
 
 # ===========================================================
-#  ARTIFACT SAVER
+# Artifacts saver
 # ===========================================================
 def _save_artifacts(driver):
     try:
