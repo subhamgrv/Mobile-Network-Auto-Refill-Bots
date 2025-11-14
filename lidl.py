@@ -4,7 +4,6 @@
 import os
 import sys
 import time
-import traceback
 import re
 
 from selenium import webdriver
@@ -19,6 +18,7 @@ from selenium.common.exceptions import TimeoutException
 # --- Config ---
 USERNAME = os.getenv("LIDL_USERNAME", "").strip()
 PASSWORD = os.getenv("LIDL_PASSWORD", "").strip()
+
 LOGIN_URL = "https://kundenkonto.lidl-connect.de/mein-lidl-connect/login.html"
 DASHBOARD_URL = "https://kundenkonto.lidl-connect.de/mein-lidl-connect/mein-tarif/uebersicht.html"
 
@@ -27,7 +27,7 @@ WAIT_SECS = int(os.getenv("WAIT_SECS", "40"))
 
 
 # ===========================================================
-#  Chrome Driver Setup — FIXED FOR SELENIUM 4
+#  Chrome Setup for GitHub Actions
 # ===========================================================
 def make_driver() -> webdriver.Chrome:
     opts = Options()
@@ -35,7 +35,6 @@ def make_driver() -> webdriver.Chrome:
     if HEADLESS:
         opts.add_argument("--headless=new")
 
-    # Required in GitHub Actions
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
@@ -44,23 +43,20 @@ def make_driver() -> webdriver.Chrome:
     opts.add_argument("--window-size=1920,1080")
     opts.add_argument("--lang=en-US,en")
 
-    # Chrome binary path (auto-set in workflow)
     chrome_bin = os.getenv("CHROME_BINARY")
     if chrome_bin and os.path.isfile(chrome_bin):
         opts.binary_location = chrome_bin
 
-    # Chromedriver path (auto-set in workflow)
     chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
     if chromedriver_path and os.path.isfile(chromedriver_path):
         service = Service(chromedriver_path)
         return webdriver.Chrome(service=service, options=opts)
 
-    # Fallback to Selenium Manager
     return webdriver.Chrome(options=opts)
 
 
 # ===========================================================
-# Utilities
+# Helpers
 # ===========================================================
 def click_if_present(driver, by, value):
     try:
@@ -87,7 +83,6 @@ def accept_cookies_if_any(driver):
 
 
 def get_consumption_blocks(driver, wait):
-    """Return all text from .consumption-info on dashboard."""
     try:
         wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
     except TimeoutException:
@@ -96,20 +91,17 @@ def get_consumption_blocks(driver, wait):
     elems = wait.until(
         EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".consumption-info"))
     )
-    results = []
 
+    results = []
     for e in elems:
         try:
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block:'center'});", e
-            )
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", e)
         except:
             pass
 
         txt = driver.execute_script(
             "return (arguments[0].textContent || '').trim();", e
         )
-
         if txt:
             results.append(" ".join(txt.split()))
 
@@ -132,7 +124,7 @@ def main() -> int:
         driver.get(LOGIN_URL)
         accept_cookies_if_any(driver)
 
-        # New Lidl login selectors — VERIFIED from your HTML
+        # NEW login fields (confirmed from your HTML)
         username_field = wait.until(
             EC.presence_of_element_located((By.NAME, "msisdn"))
         )
@@ -152,7 +144,7 @@ def main() -> int:
         )
         login_button.click()
 
-        # Wait until the dashboard loads
+        # Wait until dashboard loads
         wait.until(
             EC.any_of(
                 EC.url_contains("uebersicht"),
@@ -160,7 +152,7 @@ def main() -> int:
             )
         )
 
-        # Now read consumption blocks
+        # Parse data usage blocks
         blocks = get_consumption_blocks(driver, wait)
 
         # Extract remaining GB
@@ -178,17 +170,24 @@ def main() -> int:
 
         print(f"Remaining GB: {remaining}")
 
-        # Auto-refill
+        # =====================================================
+        # NEW REFILL BUTTON (confirmed from your screenshot)
+        # =====================================================
         if remaining is not None and remaining <= 0.9:
             try:
                 refill_button = wait.until(
-                    EC.element_to_be_clickable((By.CLASS_NAME, "tariff-btn-177"))
+                    EC.element_to_be_clickable(
+                        (By.XPATH, "//button[contains(., 'Activate refill')]")
+                    )
                 )
+
                 try:
                     refill_button.click()
                 except:
                     driver.execute_script("arguments[0].click();", refill_button)
+
                 print("Refill activated successfully!")
+
             except TimeoutException:
                 print("[WARN] Refill button not found.")
         else:
