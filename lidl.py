@@ -19,7 +19,8 @@ from selenium.common.exceptions import TimeoutException
 # --- Config ---
 USERNAME = os.getenv("LIDL_USERNAME", "").strip()
 PASSWORD = os.getenv("LIDL_PASSWORD", "").strip()
-URL = "https://kundenkonto.lidl-connect.de/mein-lidl-connect/mein-tarif/uebersicht.html"
+LOGIN_URL = "https://kundenkonto.lidl-connect.de/mein-lidl-connect/login.html"
+DASHBOARD_URL = "https://kundenkonto.lidl-connect.de/mein-lidl-connect/mein-tarif/uebersicht.html"
 
 HEADLESS = os.getenv("HEADLESS", "true").lower() in ("1", "true", "yes")
 WAIT_SECS = int(os.getenv("WAIT_SECS", "40"))
@@ -54,7 +55,7 @@ def make_driver() -> webdriver.Chrome:
         service = Service(chromedriver_path)
         return webdriver.Chrome(service=service, options=opts)
 
-    # Fallback (Selenium Manager)
+    # Fallback to Selenium Manager
     return webdriver.Chrome(options=opts)
 
 
@@ -75,8 +76,8 @@ def click_if_present(driver, by, value):
 
 def accept_cookies_if_any(driver):
     selectors = [
-        (By.XPATH, "//button[contains(., 'Alle akzeptieren') or contains(., 'Akzeptieren') or contains(., 'Accept')]"),
-        (By.CSS_SELECTOR, "button[aria-label*='Akzept'], button[aria-label*='Accept']"),
+        (By.XPATH, "//button[contains(., 'Ok')]"),
+        (By.XPATH, "//button[contains(., 'Akzeptieren')]"),
     ]
     for by, sel in selectors:
         if click_if_present(driver, by, sel):
@@ -86,23 +87,32 @@ def accept_cookies_if_any(driver):
 
 
 def get_consumption_blocks(driver, wait):
-    """Return ALL non-empty text blocks from .consumption-info elements."""
+    """Return all text from .consumption-info on dashboard."""
     try:
         wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
     except TimeoutException:
         pass
 
-    elems = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".consumption-info")))
+    elems = wait.until(
+        EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".consumption-info"))
+    )
     results = []
 
     for e in elems:
         try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", e)
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block:'center'});", e
+            )
         except:
             pass
-        txt = driver.execute_script("return (arguments[0].textContent || '').trim();", e)
+
+        txt = driver.execute_script(
+            "return (arguments[0].textContent || '').trim();", e
+        )
+
         if txt:
             results.append(" ".join(txt.split()))
+
     return results
 
 
@@ -118,32 +128,47 @@ def main() -> int:
     wait = WebDriverWait(driver, WAIT_SECS)
 
     try:
-        driver.get(URL)
+        # Load login page
+        driver.get(LOGIN_URL)
         accept_cookies_if_any(driver)
 
-        # Login form
-        username_field = wait.until(EC.presence_of_element_located((By.ID, "__BVID__27")))
-        password_field = wait.until(EC.presence_of_element_located((By.ID, "__BVID__31")))
+        # New Lidl login selectors — VERIFIED from your HTML
+        username_field = wait.until(
+            EC.presence_of_element_located((By.NAME, "msisdn"))
+        )
+        password_field = wait.until(
+            EC.presence_of_element_located((By.NAME, "password"))
+        )
 
-        username_field.clear(); username_field.send_keys(USERNAME)
-        password_field.clear(); password_field.send_keys(PASSWORD)
+        username_field.clear()
+        username_field.send_keys(USERNAME)
 
-        login_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-login.btn-primary")))
-        driver.execute_script("arguments[0].removeAttribute('disabled');", login_button)
+        password_field.clear()
+        password_field.send_keys(PASSWORD)
+
+        # New login button
+        login_button = wait.until(
+            EC.element_to_be_clickable((By.ID, "submit-10"))
+        )
         login_button.click()
 
-        # Wait until dashboard
-        wait.until(EC.any_of(
-            EC.url_contains("uebersicht"),
-            EC.presence_of_element_located((By.ID, "lidl-connect-overview"))
-        ))
+        # Wait until the dashboard loads
+        wait.until(
+            EC.any_of(
+                EC.url_contains("uebersicht"),
+                EC.presence_of_element_located((By.ID, "lidl-connect-overview")),
+            )
+        )
 
+        # Now read consumption blocks
         blocks = get_consumption_blocks(driver, wait)
 
-        # Parse remaining data
+        # Extract remaining GB
         remaining = None
         for b in blocks:
-            m = re.search(r"(\d+(?:[.,]\d+)?) (?:von|GB von) (\d+(?:[.,]\d+)?) GB", b)
+            m = re.search(
+                r"(\d+(?:[.,]\d+)?)\s+(?:von|GB von)\s+(\d+(?:[.,]\d+)?)\s+GB", b
+            )
             if m:
                 used, total = m.groups()
                 used = float(used.replace(",", "."))
@@ -156,14 +181,16 @@ def main() -> int:
         # Auto-refill
         if remaining is not None and remaining <= 0.9:
             try:
-                refill_button = wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "tariff-btn-177")))
+                refill_button = wait.until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, "tariff-btn-177"))
+                )
                 try:
                     refill_button.click()
                 except:
                     driver.execute_script("arguments[0].click();", refill_button)
                 print("Refill activated successfully!")
             except TimeoutException:
-                print("[warn] No refill button found.")
+                print("[WARN] Refill button not found.")
         else:
             print("No refill needed.")
 
