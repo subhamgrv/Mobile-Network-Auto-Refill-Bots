@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# lidl.py — fully GitHub Actions compatible (Ubuntu 24.04, Chrome stable, Selenium 4.x)
+# lidl.py — fully GitHub Actions compatible Ubuntu 24.04, Chrome stable, Selenium 4.x)
 
 import os
 import sys
@@ -227,3 +227,4 @@ def _save_artifacts(driver):
 # ===========================================================
 if __name__ == "__main__":
     sys.exit(main())
+
