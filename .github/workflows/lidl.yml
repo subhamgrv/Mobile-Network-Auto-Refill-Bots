@@ -18,23 +18,25 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y wget unzip curl gnupg ca-certificates fonts-liberation \
             libappindicator3-1 libnss3 libxss1 libgconf-2-4
+
           # Add Google repo and install google-chrome-stable
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add - >/dev/null
           echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update -y
           sudo apt-get install -y google-chrome-stable
 
-          # Detect chrome binary and export to GITHUB_ENV so later steps inherit it
+          # Detect chrome binary
           CHROME_BIN=$(which google-chrome-stable || which chromium-browser || which chromium || true)
           echo "Detected chrome binary: $CHROME_BIN"
           echo "CHROME_BINARY=$CHROME_BIN" >> $GITHUB_ENV
 
-          # Resolve Chrome version and major version; then download matching chromedriver
+          # Resolve Chrome version
           CHROME_FULL_VERSION=$($CHROME_BIN --version 2>/dev/null | grep -oE '\d+\.\d+\.\d+\.\d+' || true)
           echo "Chrome full version: $CHROME_FULL_VERSION"
           CHROME_MAJOR=$(echo "$CHROME_FULL_VERSION" | cut -d. -f1 || true)
           echo "Chrome major version: $CHROME_MAJOR"
 
+          # Download matching chromedriver
           if [ -n "$CHROME_MAJOR" ]; then
             echo "Resolving chromedriver for major version $CHROME_MAJOR"
             DRIVER_VER=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_MAJOR")
