@@ -19,39 +19,26 @@ jobs:
           sudo apt-get install -y wget unzip curl gnupg ca-certificates fonts-liberation \
             libappindicator3-1 libnss3 libxss1 libgconf-2-4
 
-          # Add Google repo and install google-chrome-stable
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add - >/dev/null
           echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update -y
           sudo apt-get install -y google-chrome-stable
 
-          # Detect chrome binary
           CHROME_BIN=$(which google-chrome-stable || which chromium-browser || which chromium || true)
-          echo "Detected chrome binary: $CHROME_BIN"
           echo "CHROME_BINARY=$CHROME_BIN" >> $GITHUB_ENV
 
-          # Resolve Chrome version
           CHROME_FULL_VERSION=$($CHROME_BIN --version 2>/dev/null | grep -oE '\d+\.\d+\.\d+\.\d+' || true)
-          echo "Chrome full version: $CHROME_FULL_VERSION"
           CHROME_MAJOR=$(echo "$CHROME_FULL_VERSION" | cut -d. -f1 || true)
-          echo "Chrome major version: $CHROME_MAJOR"
 
-          # Download matching chromedriver
           if [ -n "$CHROME_MAJOR" ]; then
-            echo "Resolving chromedriver for major version $CHROME_MAJOR"
             DRIVER_VER=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_MAJOR")
-            if [ -z "$DRIVER_VER" ]; then
-              echo "Could not resolve chromedriver version for major $CHROME_MAJOR" >&2
-            else
-              echo "Resolved chromedriver version: $DRIVER_VER"
+            if [ -n "$DRIVER_VER" ]; then
               curl -sS -O "https://chromedriver.storage.googleapis.com/${DRIVER_VER}/chromedriver_linux64.zip"
               unzip -q chromedriver_linux64.zip
               sudo mv -f chromedriver /usr/local/bin/chromedriver
               sudo chmod +x /usr/local/bin/chromedriver
               echo "CHROMEDRIVER_PATH=/usr/local/bin/chromedriver" >> $GITHUB_ENV
             fi
-          else
-            echo "Failed to detect Chrome major version; chromedriver not installed." >&2
           fi
 
       - name: Set up Python
@@ -64,17 +51,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Debug: chrome & chromedriver versions
-        run: |
-          echo "CHROME_BINARY from env: $CHROME_BINARY"
-          if [ -n "$CHROME_BINARY" ]; then
-            $CHROME_BINARY --version || true
-          else
-            echo "CHROME_BINARY is empty"
-          fi
-          which chromedriver || true
-          chromedriver --version || true
-          python -V
+
+
 
       - name: Run Selenium script
         env:
