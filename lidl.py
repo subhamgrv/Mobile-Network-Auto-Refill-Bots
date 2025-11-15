@@ -49,51 +49,55 @@ def make_driver():
 
 
 # ---------------------------------------------------------
-# Cookie handling
+# Accept cookies if shown
 # ---------------------------------------------------------
 def accept_cookies_if_any(driver):
-    buttons = [
+    selectors = [
         "//button[contains(., 'Ok')]",
+        "//button[contains(., 'OK')]",
         "//button[contains(., 'Akzeptieren')]",
     ]
-    for xpath in buttons:
+    for xp in selectors:
         try:
-            b = driver.find_element(By.XPATH, xpath)
-            driver.execute_script("arguments[0].click();", b)
-            time.sleep(0.5)
+            btn = driver.find_element(By.XPATH, xp)
+            driver.execute_script("arguments[0].click();", btn)
+            time.sleep(0.3)
             return
         except:
             pass
 
 
 # ---------------------------------------------------------
-# Extract remaining GB from REFILLABLE_DATA block
+# Extract remaining refillable data (0.04 GB / 1 GB)
 # ---------------------------------------------------------
 def get_remaining_unlimited(driver, wait):
     try:
         label = wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "label[for='REFILLABLE_DATA']"))
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "label[for='REFILLABLE_DATA']")
+            )
         )
     except TimeoutException:
         print("[WARN] REFILLABLE_DATA label not found")
         return None
 
     text = label.text.strip().replace("\n", " ")
-    # expected format: "0 GB / 1 GB"
+    # Example: "0.04 GB / 1 GB"
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*GB\s*/\s*(\d+(?:[.,]\d+)?)\s*GB", text)
     if not m:
-        print("[WARN] Could not parse remaining from:", text)
+        print("[WARN] Could not parse REFILLABLE_DATA text:", text)
         return None
 
     used = float(m.group(1).replace(",", "."))
     total = float(m.group(2).replace(",", "."))
     remaining = total - used
+
     print(f"[DEBUG] Unlimited Refill: used={used}, total={total}, remaining={remaining}")
     return remaining
 
 
 # ---------------------------------------------------------
-# Main
+# Main logic
 # ---------------------------------------------------------
 def main():
     if not USERNAME or not PASSWORD:
@@ -104,50 +108,51 @@ def main():
     wait = WebDriverWait(driver, WAIT_SECS)
 
     try:
+        # Load login page
         driver.get(LOGIN_URL)
         accept_cookies_if_any(driver)
 
-        # Login
+        # Login form
         u = wait.until(EC.presence_of_element_located((By.NAME, "msisdn")))
         p = wait.until(EC.presence_of_element_located((By.NAME, "password")))
 
         u.send_keys(USERNAME)
         p.send_keys(PASSWORD)
 
-        login_button = wait.until(EC.element_to_be_clickable((By.ID, "submit-10")))
-        login_button.click()
+        login_btn = wait.until(EC.element_to_be_clickable((By.ID, "submit-10")))
+        login_btn.click()
 
-        # Wait until dashboard
-        wait.until(
-            EC.presence_of_element_located((By.ID, "lidl-connect-overview"))
-        )
+        # Wait for dashboard
+        wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
 
-        # --- Extract remaining GB (correct block) ---
+        # Extract unlimited refill remaining
         remaining = get_remaining_unlimited(driver, wait)
         print(f"Remaining GB: {remaining}")
 
-        # --- Refill button ---
+        # Refill if <= 0.9 GB remaining
         if remaining is not None and remaining <= 0.9:
             try:
+                # IMPORTANT: Correct selector for refill button
                 refill_btn = wait.until(
-                    EC.element_to_be_clickable(
-                        (
-                            By.XPATH,
-                            "//div[contains(@class,'consumption-box')]//button[contains(., 'Activate refill')]"
-                        )
-                    )
+                    EC.element_to_be_clickable((
+                        By.XPATH,
+                        "//app-consumptions-refill-v2//button[contains(., 'Activate refill')]"
+                    ))
                 )
 
-                driver.execute_script("arguments[0].scrollIntoView({block:'center'});", refill_btn)
+                # Scroll into view
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center'});", refill_btn
+                )
                 time.sleep(0.2)
 
+                # Try click
                 try:
                     refill_btn.click()
                 except:
                     driver.execute_script("arguments[0].click();", refill_btn)
 
                 print("Refill activated successfully!")
-
             except TimeoutException:
                 print("[WARN] Refill button not found")
 
@@ -166,7 +171,7 @@ def main():
 
 
 # ---------------------------------------------------------
-# Save artifacts
+# Save debug artifacts
 # ---------------------------------------------------------
 def save_artifacts(driver):
     try:
@@ -174,6 +179,7 @@ def save_artifacts(driver):
         driver.save_screenshot("/tmp/lidl/screen.png")
         with open("/tmp/lidl/page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
+        print("Saved artifacts to /tmp/lidl/")
     except:
         pass
 
