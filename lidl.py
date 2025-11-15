@@ -136,7 +136,7 @@ def main():
                 refill_btn = wait.until(
                     EC.element_to_be_clickable((
                         By.XPATH,
-                        "//app-consumptions-refill-v2//button[contains(., 'Activate refill')]"
+                        "//app-consumptions-refill-v2//div[contains(@class,'consumption-box')]//button"
                     ))
                 )
 
@@ -186,3 +186,4 @@ def save_artifacts(driver):
 
 if __name__ == "__main__":
     sys.exit(main())
+
