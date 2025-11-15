@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# lidl.py — fully GitHub Actions compatible Ubuntu 24.04, Chrome stable, Selenium 4.x)
+# lidl.py — fully GitHub Actions compatible (Ubuntu 24.04, Chrome stable, Selenium 4.x)
 
 import os
 import sys
@@ -65,7 +65,7 @@ def click_if_present(driver, by, value):
         if elem.is_enabled():
             elem.click()
             return True
-    except:
+    except Exception:
         pass
     return False
 
@@ -82,30 +82,49 @@ def accept_cookies_if_any(driver):
     return False
 
 
-def get_consumption_blocks(driver, wait):
-    try:
-        wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
-    except TimeoutException:
-        pass
+def get_remaining_gb(driver, wait) -> float | None:
+    """
+    Extract 'used / total GB' from the new Lidl Connect UI, e.g.:
 
-    elems = wait.until(
-        EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".consumption-info"))
+        <label for="DATA" class="unit-display text-xs">
+            50 GB / 50 GB
+        </label>
+
+    Returns remaining GB (total - used) as float, or None if not found.
+    """
+    try:
+        # Wait until the consumption card is present
+        wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, ".app-consumption-list")
+            )
+        )
+    except TimeoutException:
+        print("[WARN] .app-consumption-list not found", file=sys.stderr)
+        return None
+
+    labels = driver.find_elements(
+        By.CSS_SELECTOR,
+        ".app-consumption-list label.unit-display.text-xs",
     )
 
-    results = []
-    for e in elems:
-        try:
-            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", e)
-        except:
-            pass
-
-        txt = driver.execute_script(
-            "return (arguments[0].textContent || '').trim();", e
+    for label in labels:
+        text = label.text.strip().replace("\n", " ")
+        # Expect something like "0.01 GB / 1 GB" or "50 GB / 50 GB"
+        m = re.search(
+            r"(\d+(?:[.,]\d+)?)\s*GB\s*/\s*(\d+(?:[.,]\d+)?)\s*GB",
+            text,
         )
-        if txt:
-            results.append(" ".join(txt.split()))
+        if m:
+            used_str, total_str = m.groups()
+            used = float(used_str.replace(",", "."))
+            total = float(total_str.replace(",", "."))
+            remaining = total - used
+            print(f"[DEBUG] Parsed usage from label: used={used}, total={total}, remaining={remaining}")
+            return remaining
 
-    return results
+    print("[WARN] No matching 'X GB / Y GB' pattern found in labels", file=sys.stderr)
+    return None
 
 
 # ===========================================================
@@ -150,25 +169,12 @@ def main() -> int:
             )
         )
 
-        blocks = get_consumption_blocks(driver, wait)
-
-        # Extract remaining GB
-        remaining = None
-        for b in blocks:
-            m = re.search(
-                r"(\d+(?:[.,]\d+)?)\s+(?:von|GB von)\s+(\d+(?:[.,]\d+)?)\s+GB", b
-            )
-            if m:
-                used, total = m.groups()
-                used = float(used.replace(",", "."))
-                total = float(total.replace(",", "."))
-                remaining = total - used
-                break
-
+        # --- NEW: read remaining GB from the new card HTML ---
+        remaining = get_remaining_gb(driver, wait)
         print(f"Remaining GB: {remaining}")
 
         # =====================================================
-        # Refill Activation (Matches your HTML exactly)
+        # Refill Activation
         # =====================================================
         if remaining is not None and remaining <= 0.9:
             try:
@@ -178,18 +184,15 @@ def main() -> int:
                     )
                 )
 
-                # Scroll
                 driver.execute_script(
                     "arguments[0].scrollIntoView({block:'center'});",
                     refill_button,
                 )
                 time.sleep(0.3)
 
-                # Try normal click
                 try:
                     refill_button.click()
-                except:
-                    # Fallback click
+                except Exception:
                     driver.execute_script("arguments[0].click();", refill_button)
 
                 print("Refill activated successfully!")
@@ -220,11 +223,10 @@ def _save_artifacts(driver):
         with open("/tmp/lidl/page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
         print("Saved /tmp/lidl/screen.png and /tmp/lidl/page.html", file=sys.stderr)
-    except:
+    except Exception:
         pass
 
 
 # ===========================================================
 if __name__ == "__main__":
     sys.exit(main())
-
