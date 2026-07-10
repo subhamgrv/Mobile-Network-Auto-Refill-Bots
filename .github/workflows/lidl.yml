@@ -46,7 +46,9 @@ jobs:
         env:
           LIDL_USERNAME: ${{ secrets.LIDL_USERNAME }}
           LIDL_PASSWORD: ${{ secrets.LIDL_PASSWORD }}
+          LIDL_LOGIN_URL: "https://kundenkonto.lidl-connect.de/mein-lidl-connect.html"
           HEADLESS: "true"
+          WAIT_SECS: "90"
         run: |
           set -x
           python lidl.py

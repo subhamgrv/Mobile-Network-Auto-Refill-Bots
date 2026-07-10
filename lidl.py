@@ -39,7 +39,7 @@ PASSWORD = os.getenv("LIDL_PASSWORD", "").strip()
 
 LOGIN_URL = os.getenv(
     "LIDL_LOGIN_URL",
-    "https://kundenkonto.lidl-connect.de/mein-lidl-connect/login.html",
+    "https://kundenkonto.lidl-connect.de/mein-lidl-connect.html",
 )
 
 HEADLESS = os.getenv("HEADLESS", "true").strip().lower() in {"1", "true", "yes", "on"}
@@ -162,46 +162,80 @@ def wait_for_first(driver, candidates, description):
         raise TimeoutException(f"Timed out waiting for {description}. Tried: {selectors}") from exc
 
 
+def wait_for_js(driver, script, description):
+    wait = WebDriverWait(driver, WAIT_SECS)
+    try:
+        return wait.until(lambda d: d.execute_script(script))
+    except TimeoutException as exc:
+        raise TimeoutException(
+            f"Timed out waiting for {description}. URL={driver.current_url!r}, title={driver.title!r}"
+        ) from exc
+
+
 def fill_login_form(driver):
-    username_candidates = [
-        (By.NAME, "msisdn"),
-        (By.NAME, "username"),
-        (By.NAME, "email"),
-        (By.ID, "msisdn"),
-        (By.ID, "username"),
-        (By.CSS_SELECTOR, "input[autocomplete='username']"),
-        (By.CSS_SELECTOR, "input[type='tel']"),
-        (By.CSS_SELECTOR, "input[type='text']"),
-        (By.CSS_SELECTOR, "input[type='email']"),
-    ]
-    password_candidates = [
-        (By.NAME, "password"),
-        (By.ID, "password"),
-        (By.CSS_SELECTOR, "input[autocomplete='current-password']"),
-        (By.CSS_SELECTOR, "input[type='password']"),
-    ]
+    wait_for_js(
+        driver,
+        """
+        return Boolean(
+          document.querySelector("form[data-form-login] input[name='msisdn'], app-login-v2 input[name='msisdn'], input[data-msisdn]")
+          && document.querySelector("form[data-form-login] input[name='password'], app-login-v2 input[name='password'], input[data-password]")
+        );
+        """,
+        "Lidl login form",
+    )
 
-    username = wait_for_first(driver, username_candidates, "Lidl username field")
-    password = wait_for_first(driver, password_candidates, "Lidl password field")
+    result = driver.execute_script(
+        """
+        function setValue(el, value) {
+          if (!el) return false;
+          el.focus();
+          el.value = value;
+          el.dispatchEvent(new Event('input', {bubbles: true}));
+          el.dispatchEvent(new Event('change', {bubbles: true}));
+          el.dispatchEvent(new KeyboardEvent('keyup', {bubbles: true, key: 'a'}));
+          return true;
+        }
 
-    username.clear()
-    username.send_keys(USERNAME)
-    password.clear()
-    password.send_keys(PASSWORD)
+        const username = document.querySelector("form[data-form-login] input[name='msisdn'], app-login-v2 input[name='msisdn'], input[data-msisdn]");
+        const password = document.querySelector("form[data-form-login] input[name='password'], app-login-v2 input[name='password'], input[data-password]");
+        const hiddenUsername = document.querySelector("form.mod_login input[name='username'], input#username");
+        const hiddenPassword = document.querySelector("form.mod_login input[name='password'], input#password");
+
+        return {
+          username: setValue(username, arguments[0]),
+          password: setValue(password, arguments[1]),
+          hiddenUsername: setValue(hiddenUsername, arguments[0]),
+          hiddenPassword: setValue(hiddenPassword, arguments[1]),
+        };
+        """,
+        USERNAME,
+        PASSWORD,
+    )
+    if not result.get("username") or not result.get("password"):
+        raise RuntimeError(f"Could not fill Lidl login form: {result}")
     print("[INFO] Login form filled")
 
 
 def click_login_button(driver):
-    login_candidates = [
-        (By.ID, "submit-10"),
-        (By.CSS_SELECTOR, "button[type='submit']"),
-        (By.CSS_SELECTOR, "input[type='submit']"),
-        (By.XPATH, "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'anmelden')]"),
-        (By.XPATH, "//button[contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'login')]"),
-        (By.XPATH, "//*[self::button or @role='button'][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'einloggen')]"),
-    ]
-    button = wait_for_first(driver, login_candidates, "Lidl login button")
-    js_click(driver, button)
+    wait_for_js(
+        driver,
+        """
+        return Boolean(document.querySelector("form[data-form-login] button[type='submit'], app-login-v2 button[type='submit'], button#submit-10"));
+        """,
+        "Lidl login button",
+    )
+    clicked = driver.execute_script(
+        """
+        const button = document.querySelector("form[data-form-login] button[type='submit'], app-login-v2 button[type='submit'], button#submit-10");
+        if (!button) return false;
+        try { button.scrollIntoView({block: 'center'}); } catch (e) {}
+        button.click();
+        button.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+        return true;
+        """
+    )
+    if not clicked:
+        raise RuntimeError("Could not click Lidl login button")
     print("[INFO] Login submitted")
 
 
