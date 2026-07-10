@@ -354,8 +354,10 @@ def login_error_text(driver):
 def wait_after_login(driver):
     start_url = driver.current_url
     wait = WebDriverWait(driver, WAIT_SECS)
+    last_login_error = None
 
     def is_ready(d):
+        nonlocal last_login_error
         if d.find_elements(By.ID, "lidl-connect-overview"):
             return True
         if d.find_elements(By.CSS_SELECTOR, "label[for='REFILLABLE_DATA']"):
@@ -364,13 +366,16 @@ def wait_after_login(driver):
             return True
         err = login_error_text(d)
         if err:
-            raise RuntimeError(f"Lidl rejected the login or requires attention: {err}")
+            last_login_error = err
+            return False
         return d.current_url != start_url and "login" not in d.current_url.lower()
 
     try:
         wait.until(is_ready)
         print("[INFO] Login completed; current URL:", driver.current_url)
     except TimeoutException as exc:
+        if last_login_error:
+            raise RuntimeError(f"Lidl rejected the login or requires attention: {last_login_error}") from exc
         raise TimeoutException(
             f"Timed out after login. URL={driver.current_url!r}, title={driver.title!r}"
         ) from exc
