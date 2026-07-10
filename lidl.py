@@ -15,7 +15,9 @@ from selenium.common.exceptions import TimeoutException
 USERNAME = os.getenv("LIDL_USERNAME", "").strip()
 PASSWORD = os.getenv("LIDL_PASSWORD", "").strip()
 
-LOGIN_URL = "https://kundenkonto.lidl-connect.de/mein-lidl-connect/login.html"
+BASE_URL = os.getenv("LIDL_BASE_URL", "https://kundenkonto.lidl-connect.de").rstrip("/")
+LOGIN_URL = os.getenv("LIDL_LOGIN_URL", f"{BASE_URL}/mein-lidl-connect.html")
+OVERVIEW_URL = os.getenv("LIDL_OVERVIEW_URL", f"{BASE_URL}/mein-lidl-connect/uebersicht.html")
 
 HEADLESS = os.getenv("HEADLESS", "true").lower() in ("1","true","yes")
 WAIT_SECS = int(os.getenv("WAIT_SECS", "40"))
@@ -66,31 +68,50 @@ def accept_cookies_if_any(driver):
 
 
 # ---------------------------------------------------------
-# Extract remaining refillable data (0.04 GB / 1 GB)
+# Extract remaining refillable data (for example: "0.04 GB / 1 GB")
 # ---------------------------------------------------------
 def get_remaining_unlimited(driver, wait):
+    text = ""
+    selected_selector = ""
     try:
-        label = wait.until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "label[for='REFILLABLE_DATA']")
-            )
+        refill = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "app-consumptions-refill-v2"))
         )
     except TimeoutException:
-        print("[WARN] REFILLABLE_DATA label not found")
+        print("[WARN] Unlimited refill component not found")
         return None
 
-    text = label.text.strip().replace("\n", " ")
-    # Example: "0.04 GB / 1 GB"
+    selectors = [
+        "label[for='REFILLABLE_DATA']",
+        "label[for^='progress-refill-REFILLABLE_DATA']",
+        "progress[id^='progress-refill-REFILLABLE_DATA']",
+        "article[aria-label='Unlimited Refill']",
+    ]
+    for selector in selectors:
+        try:
+            el = refill.find_element(By.CSS_SELECTOR, selector)
+            text = (el.text or "").strip().replace("\n", " ")
+            if not text:
+                text = (el.get_attribute("aria-valuetext") or "").strip()
+            if text:
+                selected_selector = selector
+                break
+        except:
+            pass
+
     m = re.search(r"(\d+(?:[.,]\d+)?)\s*GB\s*/\s*(\d+(?:[.,]\d+)?)\s*GB", text)
     if not m:
         print("[WARN] Could not parse REFILLABLE_DATA text:", text)
         return None
 
-    used = float(m.group(1).replace(",", "."))
+    first_value = float(m.group(1).replace(",", "."))
     total = float(m.group(2).replace(",", "."))
-    remaining = total - used
+    if selected_selector == "label[for='REFILLABLE_DATA']":
+        remaining = total - first_value
+    else:
+        remaining = first_value
 
-    print(f"[DEBUG] Unlimited Refill: used={used}, total={total}, remaining={remaining}")
+    print(f"[DEBUG] Unlimited Refill: remaining={remaining}, total={total}")
     return remaining
 
 
@@ -120,8 +141,13 @@ def main():
         login_btn = wait.until(EC.element_to_be_clickable((By.ID, "submit-10")))
         login_btn.click()
 
-        # Wait for dashboard
-        wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
+        # Wait for dashboard. The current portal redirects to this location after login,
+        # but navigating explicitly keeps the script stable if the redirect lands elsewhere.
+        try:
+            wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
+        except TimeoutException:
+            driver.get(OVERVIEW_URL)
+            wait.until(EC.presence_of_element_located((By.ID, "lidl-connect-overview")))
 
         # Extract unlimited refill remaining
         remaining = get_remaining_unlimited(driver, wait)
@@ -130,11 +156,11 @@ def main():
         # Refill if <= 0.9 GB remaining
         if remaining is not None and remaining <= 0.9:
             try:
-                # IMPORTANT: Correct selector for refill button
                 refill_btn = wait.until(
                     EC.element_to_be_clickable((
                         By.XPATH,
-                        "//app-consumptions-refill-v2//div[contains(@class,'consumption-box')]//button"
+                        "//app-consumptions-refill-v2"
+                        "//button[contains(@aria-label,'Refill') or contains(normalize-space(.),'Refill aktivieren')]"
                     ))
                 )
 
