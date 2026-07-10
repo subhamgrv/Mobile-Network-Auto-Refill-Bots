@@ -1,0 +1,4 @@
+.env
+.lidl-debug/
+__pycache__/
+*.py[cod]
