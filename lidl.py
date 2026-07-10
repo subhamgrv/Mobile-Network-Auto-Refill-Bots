@@ -46,6 +46,7 @@ HEADLESS = os.getenv("HEADLESS", "true").strip().lower() in {"1", "true", "yes",
 WAIT_SECS = int(os.getenv("WAIT_SECS", "45"))
 ARTIFACT_DIR = os.getenv("LIDL_ARTIFACT_DIR", "/tmp/lidl")
 REFILL_THRESHOLD_GB = float(os.getenv("REFILL_THRESHOLD_GB", "0.9"))
+PAUSE_BEFORE_QUIT_SECS = int(os.getenv("PAUSE_BEFORE_QUIT_SECS", "0"))
 
 
 def make_driver():
@@ -410,6 +411,9 @@ def main():
         return 3
 
     finally:
+        if PAUSE_BEFORE_QUIT_SECS > 0:
+            print(f"[INFO] Keeping browser open for {PAUSE_BEFORE_QUIT_SECS} seconds")
+            time.sleep(PAUSE_BEFORE_QUIT_SECS)
         driver.quit()
 
 
