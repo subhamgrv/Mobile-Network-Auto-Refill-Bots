@@ -41,12 +41,18 @@ LOGIN_URL = os.getenv(
     "LIDL_LOGIN_URL",
     "https://kundenkonto.lidl-connect.de/mein-lidl-connect.html",
 )
+LOGIN_URL_FALLBACKS = [
+    LOGIN_URL,
+    "https://kundenkonto.lidl-connect.de/mein-lidl-connect/login.html",
+    "https://kundenkonto.lidl-connect.de/mein-lidl-connect.html",
+]
 
 HEADLESS = os.getenv("HEADLESS", "true").strip().lower() in {"1", "true", "yes", "on"}
 WAIT_SECS = int(os.getenv("WAIT_SECS", "45"))
 ARTIFACT_DIR = os.getenv("LIDL_ARTIFACT_DIR", "/tmp/lidl")
 REFILL_THRESHOLD_GB = float(os.getenv("REFILL_THRESHOLD_GB", "0.9"))
 PAUSE_BEFORE_QUIT_SECS = int(os.getenv("PAUSE_BEFORE_QUIT_SECS", "0"))
+SCRIPT_VERSION = "2026-07-10-maintenance-fallback"
 
 
 def make_driver():
@@ -170,6 +176,63 @@ def wait_for_js(driver, script, description):
         raise TimeoutException(
             f"Timed out waiting for {description}. URL={driver.current_url!r}, title={driver.title!r}"
         ) from exc
+
+
+def on_maintenance_page(driver):
+    title = (driver.title or "").lower()
+    if "wartungsseite" in title or "maintenance" in title:
+        return True
+
+    try:
+        body = driver.find_element(By.TAG_NAME, "body").text.lower()
+    except Exception:
+        body = ""
+    return "wartungsseite" in body or "maintenance" in body
+
+
+def login_form_present(driver):
+    try:
+        return bool(
+            driver.execute_script(
+                """
+                return Boolean(
+                  document.querySelector("form[data-form-login] input[name='msisdn'], app-login-v2 input[name='msisdn'], input[data-msisdn]")
+                  && document.querySelector("form[data-form-login] input[name='password'], app-login-v2 input[name='password'], input[data-password]")
+                );
+                """
+            )
+        )
+    except Exception:
+        return False
+
+
+def open_login_page(driver):
+    tried = []
+    for url in dict.fromkeys(LOGIN_URL_FALLBACKS):
+        tried.append(url)
+        print("[INFO] Opening login URL:", url)
+        driver.get(url)
+        accept_cookies_if_any(driver)
+
+        if login_form_present(driver):
+            print("[INFO] Login form detected")
+            return True
+
+        if on_maintenance_page(driver):
+            print("[WARN] Lidl returned maintenance page for:", url)
+            continue
+
+        print(f"[WARN] Login form not detected at {url}; title={driver.title!r}")
+
+    if on_maintenance_page(driver):
+        print("[WARN] Lidl maintenance page received for all login URLs; skipping this run")
+        save_artifacts(driver)
+        return False
+
+    raise TimeoutException(
+        f"Could not find Lidl login form. Tried: {', '.join(tried)}. "
+        f"Final URL={driver.current_url!r}, title={driver.title!r}"
+    )
 
 
 def fill_login_form(driver):
@@ -405,14 +468,15 @@ def save_artifacts(driver):
 
 
 def main():
+    print(f"[INFO] Lidl bot version: {SCRIPT_VERSION}")
     if not USERNAME or not PASSWORD:
         print("Missing credentials", file=sys.stderr)
         return 1
 
     driver = make_driver()
     try:
-        driver.get(LOGIN_URL)
-        accept_cookies_if_any(driver)
+        if not open_login_page(driver):
+            return 0
         fill_login_form(driver)
         accept_cookies_if_any(driver, timeout=2)
         click_login_button(driver)
